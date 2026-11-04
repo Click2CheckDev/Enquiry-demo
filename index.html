@@ -200,6 +200,18 @@ textarea:disabled{background:transparent;border:1px dashed var(--line);color:#99
 .chip.ok{background:#e3f5f0;color:var(--teal-ink)}
 @keyframes flash{0%{box-shadow:inset 0 0 0 2px var(--brand);background:#fff0f4}100%{box-shadow:inset 0 0 0 0 transparent}}
 .row.flash .cell{animation:flash 1.4s ease-out}
+.pc{display:flex;gap:8px;align-items:center}
+.pc input{flex:1;min-width:0;font:inherit;font-size:14px;padding:7px 8px;border:1px solid #e3e8eb;border-radius:4px;background:#fff;color:#222;text-transform:uppercase}
+.pc .btn{padding:8px 18px;flex-shrink:0}
+.pc-err{color:var(--brand-ink);font-size:12px;margin-top:4px}
+.pc-err:empty{display:none}
+input.ro{width:100%;font:inherit;font-size:14px;padding:6px 8px;border:1px solid #e3e8eb;border-radius:4px;background:#f3f4f6;color:#555}
+input.ro::placeholder{font-style:italic;color:#aaa;font-size:13px}
+.row.typing .cell{box-shadow:inset 0 0 0 2px var(--brand);background:#fff7fa}
+.addr-list{max-height:340px;overflow-y:auto;border:1px solid #d9d9d9;border-radius:8px;padding:4px 14px;margin-top:12px}
+.addr-list label{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid #e1e3e8;font-size:13.5px;color:#7b7b7b;cursor:pointer}
+.addr-list label:last-child{border-bottom:0}
+.addr-list input{accent-color:var(--brand);width:18px;height:18px}
 .form-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:-4px 0 6px}
 
 /* Run checks panel */
@@ -387,9 +399,14 @@ const F = {
   c_first:{label:'First name(s)', req:true},
   c_last:{label:'Surname', req:true},
   c_dob:{label:'Date of birth (dd/mm/yyyy)', req:true},
-  c_addr:{label:'Current address', req:true},
-  c_post:{label:'Postcode', req:true},
-  c_since:{label:'Living there since (mm/yyyy)', req:true},
+  c_post:{label:'Postcode', input:'postcode', req:true},
+  c_house:{label:'House Name or Number', ro:true, req:true},
+  c_addr1:{label:'1st line of address', ro:true},
+  c_addr2:{label:'2nd line of address', ro:true},
+  c_county:{label:'County', ro:true},
+  c_country:{label:'Country', ro:true},
+  c_years:{label:'Time at current address – years', input:'select', options:['',...Array.from({length:41},(_,i)=>String(i))], req:true},
+  c_months:{label:'Time at current address – months', input:'select', options:['',...Array.from({length:12},(_,i)=>String(i))]},
   c_email:{label:'Customer email', req:true},
   c_mobile:{label:'Customer mobile', req:true},
   // Crystal standard questions
@@ -432,7 +449,7 @@ for(const k in F) F[k].from ??= 'broker';
 
 const SECTIONS = [
   {c2c:true, title:'CLICK2CHECK – CUSTOMER DETAILS FOR CREDIT & OPEN BANKING', note:'Needed to run the checks. Name and date of birth are copied into Crystal\'s questions below.',
-    fields:['c_title','c_first','c_last','c_dob','c_addr','c_post','c_since','c_email','c_mobile']},
+    fields:['c_title','c_first','c_last','c_dob','c_post','c_house','c_addr1','c_addr2','c_county','c_country','c_years','c_months','c_email','c_mobile']},
   {title:'1. APPLICANT AND SECURITY DETAILS – STANDARD QUESTIONS', fields:['name','dob','adverse','fundsIn','ltd','needBy','addresses','security','valuation','loan','outstanding']},
   {types:true, title:'2. WHICH TYPE OF FINANCE DO YOU REQUIRE?'},
   {type:'bridging', title:'3. BRIDGING FINANCE – ADDITIONAL QUESTIONS', fields:['br_exit','br_works']},
@@ -444,11 +461,11 @@ const SECTIONS = [
   {title:'9. ADDITIONAL INFORMATION', fields:['other','broker','email']},
 ];
 const TYPES = [['bridging','Bridging'],['btl','Buy To Let'],['commercial','Commercial'],['development','Development'],['residential','Residential'],['second','Second Charge']];
-const C2C_KEYS = SECTIONS[0].fields;
+const C2C_KEYS = SECTIONS[0].fields.filter(k=>F[k].req);
 
 const SAMPLE = {
-  c_title:'Mrs', c_first:'Sarah Jane', c_last:'Mitchell', c_dob:'14/03/1981', c_addr:'12 Ashgrove Road, Harrogate', c_post:'HG2 7PL',
-  c_since:'05/2015', c_email:'sarah.mitchell@example.com', c_mobile:'07700 900123',
+  c_title:'Mrs', c_first:'Sarah Jane', c_last:'Mitchell', c_dob:'14/03/1981', c_post:'HG2 7PL',
+  c_years:'11', c_months:'6', c_email:'sarah.mitchell@example.com', c_mobile:'07700 900123',
   fundsIn:'Individual', needBy:'15/12/2026', security:'12 Ashgrove Road, Harrogate, HG2 7PL', valuation:'£385,000', loan:'£40,000', sc_dep:'2 children (aged 9 and 12)', res_dep:'2 children (aged 9 and 12)',
 };
 const HUB = {broker:'Demo Brokers Ltd – Jamie Adviser', email:'jamie@demobrokers.example'};
@@ -550,6 +567,7 @@ const NAV = [['enquiry','Enquiry form'],['customer','Customer consent'],['data',
 const TITLES = {enquiry:'Property Finance Enquiry', customer:'Customer consent', data:'Credit & Open Banking', docs:'Documents'};
 
 function go(v){
+  if(v!=='enquiry') fillRun++;
   state.view = v;
   document.getElementById('landing').classList.toggle('hidden', v!=='landing');
   document.getElementById('app').classList.toggle('hidden', v==='landing');
@@ -619,6 +637,10 @@ function rowHtml(k, delay){
   let ctrl;
   if(f.input==='select' && mode==='input'){
     ctrl = `<select id="f_${k}" onchange="edit('${k}',this)">${f.options.map(o=>`<option ${o===val?'selected':''} value="${o}">${o||'Choose…'}</option>`).join('')}</select>`;
+  } else if(f.input==='postcode'){
+    ctrl = `<div class="pc"><input type="text" id="f_${k}" value="${esc(val)}" placeholder="e.g. HG2 7PL" autocomplete="off" oninput="edit('${k}',this)" onkeydown="if(event.key==='Enter'){event.preventDefault();findPostcode()}"><button type="button" class="btn solid" id="pcFind" onclick="findPostcode()">Find</button></div><div class="pc-err" id="pcErr"></div>`;
+  } else if(f.ro){
+    ctrl = `<input type="text" class="ro" id="f_${k}" value="${esc(val)}" readonly placeholder="Filled by the postcode lookup">`;
   } else if(mode==='pending'){
     ctrl = `<textarea id="f_${k}" rows="1" disabled placeholder="Filled in when the customer has agreed"></textarea>`;
   } else if(mode==='copy'){
@@ -677,9 +699,87 @@ function swapChip(k){
   if(old) old.remove(); if(tmp.firstChild) cell.insertBefore(tmp.firstChild, cell.firstChild);
   row.className = row.className.replace(/\bf-\w+/g,'');
 }
-function fillSample(){
-  Object.assign(state.v, SAMPLE); state.types.add('second'); state.missing.clear();
-  renderEnquiry(); toast('Sample customer filled in, with Second Charge ticked');
+
+/* ---------------- Postcode lookup (as the live hub: Find -> pick an address -> OK) ----------------
+   Live calls Equifax listAddressByPostcode; the demo answers from a small invented list. */
+const PC_RE = /^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/;
+function postcodeResults(pc){
+  const tidy = pc.slice(0,-3)+' '+pc.slice(-3);
+  if(pc==='HG27PL'){
+    const out = [];
+    for(let n=2; n<=30; n+=2) out.push({number:String(n), street1:'Ashgrove Road', postTown:'HARROGATE', county:'North Yorkshire', country:'United Kingdom', postcode:tidy});
+    out.splice(7, 0, {subBuilding:'Flat 1', number:'14A', street1:'Ashgrove Road', postTown:'HARROGATE', county:'North Yorkshire', country:'United Kingdom', postcode:tidy},
+                     {subBuilding:'Flat 2', number:'14A', street1:'Ashgrove Road', postTown:'HARROGATE', county:'North Yorkshire', country:'United Kingdom', postcode:tidy});
+    return out;
+  }
+  // Any other valid postcode: a short invented street, so the lookup still works in a demo
+  return Array.from({length:8},(_,i)=>({number:String(i+1), street1:'Sample Road', postTown:'SAMPLE TOWN', county:'Sample County', country:'United Kingdom', postcode:tidy}));
+}
+const addrLabel = a=>[a.subBuilding, a.number, a.name, a.street1, a.postTown, a.county].filter(Boolean).join(', ');
+let PC_LIST = [];
+function findPostcode(){
+  const err = document.getElementById('pcErr');
+  const pc = (state.v.c_post||'').toUpperCase().replace(/\s+/g,'');
+  if(!PC_RE.test(pc)){ err.textContent = 'Enter a valid UK postcode, e.g. HG2 7PL'; document.getElementById('r_c_post').classList.add('missing'); return Promise.resolve(false); }
+  err.textContent = '';
+  const btn = document.getElementById('pcFind'); btn.disabled = true; btn.innerHTML = '<span class="spin" style="border-top-color:#fff"></span>Find';
+  return new Promise(res=>setTimeout(()=>{
+    btn.disabled = false; btn.textContent = 'Find';
+    PC_LIST = postcodeResults(pc);
+    modal(`<button class="close" onclick="closeModal()">×</button><h3>Select address</h3>
+      <div style="font-size:12px;color:#7b7b7b">${PC_LIST.length} addresses found for ${esc(PC_LIST[0].postcode)} · demo list (live: Equifax address lookup)</div>
+      <div class="addr-list">${PC_LIST.map((a,i)=>`<label><input type="radio" name="pcPick" value="${i}"> ${esc(addrLabel(a))}</label>`).join('')}</div>
+      <div class="btn-row" style="justify-content:flex-end;margin-top:14px"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn solid" onclick="confirmAddress()">OK</button></div>`);
+    res(true);
+  }, 700));
+}
+function confirmAddress(){
+  const pick = document.querySelector('input[name=pcPick]:checked');
+  if(!pick) return toast('Choose an address first');
+  const a = PC_LIST[+pick.value];
+  // Same mapping as the live hub: house = sub-building + name + number, line 1 = street, line 2 = post town
+  Object.assign(state.v, {c_house:[a.subBuilding, a.name, a.number].filter(Boolean).join(' '), c_addr1:a.street1, c_addr2:a.postTown, c_county:a.county, c_country:a.country, c_post:a.postcode});
+  ['c_post','c_house'].forEach(k=>state.missing.delete(k));
+  closeModal(); renderEnquiry();
+  ['c_house','c_addr1','c_addr2','c_county','c_country'].forEach(k=>document.getElementById('r_'+k).classList.add('flash'));
+}
+function addrLine(){
+  const v = state.v, town = v.c_addr2 ? v.c_addr2[0]+v.c_addr2.slice(1).toLowerCase() : '';
+  return [[v.c_house, v.c_addr1].filter(Boolean).join(' '), town, v.c_post].filter(Boolean).join(', ');
+}
+
+/* ---------------- Sample customer, typed in one field at a time ---------------- */
+let fillRun = 0;
+const sleep = ms=>new Promise(r=>setTimeout(r,ms));
+async function typeInto(k, val, run){
+  if(run!==fillRun) throw 'stopped';
+  const el = document.getElementById('f_'+k); if(!el) return;
+  const row = document.getElementById('r_'+k);
+  el.scrollIntoView({behavior:'smooth', block:'center'}); row.classList.add('typing');
+  await sleep(220);
+  if(el.tagName==='SELECT'){ el.value = val; edit(k, el); await sleep(250); }
+  else { el.value = ''; for(const ch of val){ if(run!==fillRun) throw 'stopped'; el.value += ch; edit(k, el); await sleep(32); } }
+  row.classList.remove('typing'); await sleep(120);
+}
+async function fillSample(){
+  const run = ++fillRun, btn = document.getElementById('sampleBtn');
+  btn.disabled = true; btn.textContent = 'Filling in…';
+  try{
+    for(const k of ['c_title','c_first','c_last','c_dob','c_post']) await typeInto(k, SAMPLE[k], run);
+    await sleep(300); await findPostcode(); await sleep(900);
+    if(run!==fillRun) throw 'stopped';
+    const i = PC_LIST.findIndex(a=>a.number==='12' && !a.subBuilding);
+    const r = document.querySelectorAll('input[name=pcPick]')[i]; r.checked = true; r.parentElement.scrollIntoView({block:'center'});
+    await sleep(900); confirmAddress(); await sleep(600);
+    for(const k of ['c_years','c_months','c_email','c_mobile','fundsIn','needBy','security','valuation','loan']) await typeInto(k, SAMPLE[k], run);
+    document.querySelector('.types').scrollIntoView({behavior:'smooth', block:'center'}); await sleep(500);
+    if(run!==fillRun) throw 'stopped';
+    toggleType('second', true); await sleep(500);
+    await typeInto('sc_dep', SAMPLE.sc_dep, run);
+    document.getElementById('runPanel').scrollIntoView({behavior:'smooth', block:'center'});
+    toast('Sample customer filled in, with Second Charge ticked');
+  } catch(e){ if(e!=='stopped') throw e; }
+  finally{ const b = document.getElementById('sampleBtn'); if(b){ b.disabled = false; b.textContent = 'Fill with sample customer (demo)'; } }
 }
 
 /* ---------------- Run the checks ---------------- */
@@ -769,7 +869,7 @@ function renderPhone(){
   else if(s===3) h = `${head}<h4>Pay for your checks</h4><p style="margin:0">Demo Brokers Ltd has asked you to pay for these checks before they run.</p>
       <div class="sms"><b>ORDER</b>${[state.runCredit&&'Credit report',state.runOB&&'Open Banking'].filter(Boolean).join(' + ')}</div>
       <button class="pbtn" onclick="phoneNext()">Pay now (demo – no payment taken)</button>`;
-  else if(s===4) h = `${head}<h4>Is this you?</h4><div class="sms"><b>YOUR DETAILS</b>${esc(copyValue('name'))}<br>Born ${esc(v.c_dob)}<br>${esc(v.c_addr)}, ${esc(v.c_post)}</div>
+  else if(s===4) h = `${head}<h4>Is this you?</h4><div class="sms"><b>YOUR DETAILS</b>${esc(copyValue('name'))}<br>Born ${esc(v.c_dob)}<br>${esc(addrLine())}</div>
       <p style="margin:0;font-size:12px;color:#7b7b7b">We use these to find your credit report.</p><button class="pbtn" onclick="phoneNext()">Yes, that's me</button>`;
   else if(s===5) h = `${head}<h4>Choose your bank</h4><p style="margin:0">You'll log in with your bank's own app. We never see your login.</p>
       <div class="banks">${BANKS.map(([n,c])=>`<button onclick="state.bank='${n}';phoneNext()"><span class="b" style="background:${c}">${n[0]}</span>${n}</button>`).join('')}</div>`;
@@ -1100,7 +1200,7 @@ function renderDocs(){
     <p class="note-box"><b>In the demo:</b> every document is made in your browser from invented data. In the live hub they come from Equifax and the customer's bank through Click2Check.</p>`;
 }
 
-function resetDemo(){ state = fresh(); document.getElementById('caseRef').textContent = 'Demo Brokers Ltd · Jamie Adviser'; go('enquiry'); }
+function resetDemo(){ fillRun++; state = fresh(); document.getElementById('caseRef').textContent = 'Demo Brokers Ltd · Jamie Adviser'; go('enquiry'); }
 
 const LOGO = document.querySelector('#landing .logo').src;
 const C2C_LOGO = document.querySelector('.powered img').src;
