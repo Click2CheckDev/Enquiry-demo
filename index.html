@@ -212,6 +212,8 @@ input.ro::placeholder{font-style:italic;color:#aaa;font-size:13px}
 .addr-list label{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid #e1e3e8;font-size:13.5px;color:#7b7b7b;cursor:pointer}
 .addr-list label:last-child{border-bottom:0}
 .addr-list input{accent-color:var(--brand);width:18px;height:18px}
+.sec-home{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:12.5px;color:#555;cursor:pointer}
+.sec-home input{accent-color:var(--brand);width:15px;height:15px}
 .form-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:-4px 0 6px}
 
 /* Run checks panel */
@@ -549,7 +551,7 @@ function dataFor(k){
 const VERIFY = {
   name:()=>state.runCredit && 'Matches the name on the credit file',
   dob:()=>state.runCredit && 'Matches the date of birth on the credit file',
-  security:()=>state.runCredit && /ashgrove/i.test(state.v.security||'') && 'Matches the customer\'s current address on the credit file',
+  security:()=>state.runCredit && /ashgrove/i.test(copyValue('security')) && 'Matches the customer\'s current address on the credit file',
 };
 
 const SRC = {
@@ -560,7 +562,7 @@ const SRC = {
 
 /* ---------------- State ---------------- */
 const fresh = ()=>({view:'landing', v:{...HUB}, types:new Set(), runCredit:true, runOB:true, payer:'broker',
-  phase:'form', phone:0, prog:{}, aiStep:-1, edited:new Set(), missing:new Set(), tab:'agg', bank:'Northbank'});
+  phase:'form', phone:0, prog:{}, aiStep:-1, edited:new Set(), missing:new Set(), tab:'agg', bank:'Northbank', secHome:true});
 let state = fresh();
 
 const NAV = [['enquiry','Enquiry form'],['customer','Customer consent'],['data','Credit & Open Banking'],['docs','Documents']];
@@ -595,7 +597,7 @@ function renderNav(){
 function fieldMode(k){
   // 'input' broker types it | 'copy' copied from C2C details | 'pending' waiting for data | 'data' filled from data | 'adv' broker to complete
   const f = F[k];
-  if(f.from==='copy') return 'copy';
+  if(f.from==='copy' || (k==='security' && state.secHome)) return 'copy';
   if(f.from==='hub') return 'hub';
   if(['credit','ob','both'].includes(f.from)){
     const needs = f.from==='credit' ? state.runCredit : f.from==='ob' ? state.runOB : (state.runCredit||state.runOB);
@@ -611,6 +613,7 @@ function copyValue(k){
   const v = state.v;
   if(k==='name') return [v.c_title, v.c_first, v.c_last].filter(Boolean).join(' ');
   if(k==='dob') return v.c_dob||'';
+  if(k==='security') return state.secHome ? addrLine() : (v.security||'');
 }
 function chipFor(k, mode){
   const f = F[k]; let s = null, extra = '';
@@ -620,7 +623,7 @@ function chipFor(k, mode){
   if(mode==='adv'){ s = SRC.adv; }
   if(mode==='hub') s = SRC.hub;
   if(mode==='copy'){ const ver = state.phase==='filled' && VERIFY[k] && VERIFY[k]();
-    return ver ? `<button type="button" class="chip ok" onclick="explain('${k}')"><span class="i">✓</span>Checked: credit file</button>` : `<span class="chip hub">From Click2Check details</span>`; }
+    return ver ? `<button type="button" class="chip ok" onclick="explain('${k}')"><span class="i">✓</span>Checked: credit file</button>` : `<span class="chip hub">${k==='security'?'From the postcode lookup':'From Click2Check details'}</span>`; }
   if(mode==='input'){ const ver = state.phase==='filled' && VERIFY[k] && VERIFY[k]();
     return ver ? `<button type="button" class="chip ok" onclick="explain('${k}')"><span class="i">✓</span>Checked: credit file</button>` : ''; }
   if(!s) return '';
@@ -647,6 +650,10 @@ function rowHtml(k, delay){
     ctrl = `<textarea id="f_${k}" rows="1" readonly>${esc(val)}</textarea>`;
   } else {
     ctrl = `<textarea id="f_${k}" rows="1" oninput="edit('${k}',this)">${esc(val)}</textarea>`;
+  }
+  if(k==='security'){
+    if(mode==='copy' && !val) ctrl = `<textarea id="f_${k}" rows="1" readonly placeholder="Filled by the postcode lookup above"></textarea>`;
+    ctrl += `<label class="sec-home"><input type="checkbox" ${state.secHome?'checked':''} ${state.phase!=='form'?'disabled':''} onchange="setSecHome(this.checked)"> Security is the customer's home (address above)</label>`;
   }
   return `<div class="row ${cls.join(' ')}" id="r_${k}" ${delay!=null?`style="--d:${delay}ms"`:''}><label for="f_${k}">${f.label}</label><div class="cell">${chipFor(k,mode)}${ctrl}</div></div>`;
 }
@@ -679,11 +686,17 @@ function renderEnquiry(flash){
 }
 function grow(t){ t.style.height='auto'; t.style.height=(t.scrollHeight+2)+'px'; }
 function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function setSecHome(on){
+  if(!on && !state.v.security) state.v.security = '';
+  state.secHome = on; renderEnquiry();
+  if(!on) document.getElementById('f_security').focus();
+}
 function toggleType(k,on){ on ? state.types.add(k) : state.types.delete(k); renderEnquiry(); }
 function edit(k,el){
   if(el.tagName==='TEXTAREA') grow(el);
   state.v[k] = el.value;
   if(state.missing.has(k) && el.value.trim()){ state.missing.delete(k); document.getElementById('r_'+k).classList.remove('missing'); }
+  if(k==='c_post' && state.secHome){ const t=document.getElementById('f_security'); if(t){ t.value=copyValue('security'); grow(t);} }
   if(['c_title','c_first','c_last','c_dob'].includes(k)){ ['name','dob'].forEach(c=>{ const t=document.getElementById('f_'+c); if(t){ t.value=copyValue(c); grow(t);} }); }
   if(C2C_KEYS.includes(k)){ const done = C2C_KEYS.filter(x=>(state.v[x]||'').trim()).length; document.getElementById('reqCount').textContent = `Click2Check details: ${done} of ${C2C_KEYS.length} completed`; }
   if(state.phase==='filled'){
@@ -771,7 +784,9 @@ async function fillSample(){
     const i = PC_LIST.findIndex(a=>a.number==='12' && !a.subBuilding);
     const r = document.querySelectorAll('input[name=pcPick]')[i]; r.checked = true; r.parentElement.scrollIntoView({block:'center'});
     await sleep(900); confirmAddress(); await sleep(600);
-    for(const k of ['c_years','c_months','c_email','c_mobile','fundsIn','needBy','security','valuation','loan']) await typeInto(k, SAMPLE[k], run);
+    for(const k of ['c_years','c_months','c_email','c_mobile','fundsIn','needBy']) await typeInto(k, SAMPLE[k], run);
+    { const r = document.getElementById('r_security'); r.scrollIntoView({behavior:'smooth', block:'center'}); await sleep(400); r.classList.remove('flash'); void r.offsetWidth; r.classList.add('flash'); await sleep(1100); }
+    for(const k of ['valuation','loan']) await typeInto(k, SAMPLE[k], run);
     document.querySelector('.types').scrollIntoView({behavior:'smooth', block:'center'}); await sleep(500);
     if(run!==fillRun) throw 'stopped';
     toggleType('second', true); await sleep(500);
@@ -1089,7 +1104,7 @@ function formPdf(){
       doc.text(TYPES.map(([k,l])=>(state.types.has(k)?'[X] ':'[  ] ')+l).join('      '),X+6,y+13); y+=20; continue; }
     for(const k of s.fields){
       const src = s.c2c ? 'broker' : sourceOf(k); const [bg,fg] = SRC_COLOURS[src];
-      const val = F[k].from==='copy' ? copyValue(k) : state.v[k];
+      const val = (F[k].from==='copy' || k==='security') ? copyValue(k) : state.v[k];
       let srcName = SRC_NAMES[src]; if(!s.c2c && VERIFY[k] && VERIFY[k]()) srcName += ' - checked against credit file';
       doc.setFontSize(8.5);
       const ll = doc.splitTextToSize(safe(F[k].label), L-12), vl = doc.splitTextToSize(safe(val||''), V-12), sl = doc.splitTextToSize(srcName, S-12);
@@ -1116,7 +1131,7 @@ function formHtml(){
     if(s.types){ rows += `<tr><td colspan="3">${TYPES.map(([k,l])=>(state.types.has(k)?'☒ ':'☐ ')+l).join('&nbsp;&nbsp;&nbsp;&nbsp;')}</td></tr>`; continue; }
     for(const k of s.fields){
       const src = s.c2c ? 'broker' : sourceOf(k); const [bg,fg] = SRC_COLOURS[src];
-      const val = F[k].from==='copy' ? copyValue(k) : state.v[k];
+      const val = (F[k].from==='copy' || k==='security') ? copyValue(k) : state.v[k];
       const ver = !s.c2c && VERIFY[k] && VERIFY[k]() ? '<br><span style="color:#1f7a63">✓ checked: credit file</span>' : '';
       rows += `<tr><td class="l">${F[k].label}</td><td style="background:${bg}">${esc(val||'')}</td><td class="src" style="color:${fg};background:${bg}">${SRC_NAMES[src]}${ver}</td></tr>`;
     }
